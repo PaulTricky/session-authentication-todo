@@ -1,7 +1,16 @@
 import axios from "axios";
 
+// The mock adapter below replaces axios's real one, so grab a reference to it
+// first: routes the server actually implements are forwarded to it.
+const httpAdapter = axios.getAdapter(axios.defaults.adapter);
+
+// Endpoints served by the Express app. Anything not matched here still runs
+// against the in-browser mock, so unbuilt pages keep working. Delete entries
+// from the mock as their real routes land.
+const LIVE_ROUTES = [/^\/auth\//];
+
 const api = axios.create({
-    baseURL: import.meta.env.VITE_BASE_URL || "",
+    baseURL: import.meta.env.VITE_BASE_URL || "http://localhost:3000/api",
     withCredentials: true,
 });
 
@@ -244,6 +253,10 @@ body { font-family: 'Inter', sans-serif; background-color: #09090b; color: #fafa
 
 // Setup Mock API adapter on Axios
 api.defaults.adapter = async (config) => {
+    if (LIVE_ROUTES.some((route) => route.test(config.url || ""))) {
+        return httpAdapter(config);
+    }
+
     // Simulate natural 150ms network latency
     await new Promise((resolve) => setTimeout(resolve, 150));
 
@@ -285,7 +298,7 @@ api.defaults.adapter = async (config) => {
     let status = 200;
 
     // 1. Auth routes
-    if (url === "/api/auth/me") {
+    if (url === "/auth/me") {
         const user = getUser();
         if (user) {
             responseData = { user };
@@ -293,21 +306,21 @@ api.defaults.adapter = async (config) => {
             status = 401;
             responseData = { error: "Unauthorized" };
         }
-    } else if (url === "/api/auth/login") {
+    } else if (url === "/auth/login") {
         const loggedInUser = { _id: "user-1", name: body.email?.split("@")[0] || "User", email: body.email };
         saveUser(loggedInUser);
         responseData = { user: loggedInUser };
-    } else if (url === "/api/auth/register") {
+    } else if (url === "/auth/register") {
         const newUser = { _id: `user-${Date.now()}`, name: body.name || "User", email: body.email };
         saveUser(newUser);
         responseData = { user: newUser };
-    } else if (url === "/api/auth/logout") {
+    } else if (url === "/auth/logout") {
         saveUser(null);
         responseData = { message: "Logged out" };
     }
 
     // 2. Project routes
-    else if (url === "/api/projects" && method === "get") {
+    else if (url === "/projects" && method === "get") {
         const projects = getProjects();
         responseData = projects.map((p) => ({
             _id: p._id,
@@ -317,7 +330,7 @@ api.defaults.adapter = async (config) => {
             createdAt: p.createdAt,
             updatedAt: p.updatedAt,
         }));
-    } else if (url === "/api/projects" && method === "post") {
+    } else if (url === "/projects" && method === "post") {
         const prompt = body.prompt || "New Project";
         const projName = prompt.length > 28 ? prompt.slice(0, 28) + "..." : prompt;
         const newProject = {
@@ -351,7 +364,7 @@ api.defaults.adapter = async (config) => {
         saveProjects(updated);
         responseData = newProject;
         status = 201;
-    } else if (url.match(/\/api\/projects\/public\/[^/]+$/) && method === "get") {
+    } else if (url.match(/\/projects\/public\/[^/]+$/) && method === "get") {
         const id = url.split("/").pop();
         const projects = getProjects();
         const found = projects.find((p) => p._id === id);
@@ -361,8 +374,8 @@ api.defaults.adapter = async (config) => {
             status = 404;
             responseData = { error: "Website unavailable or not published yet" };
         }
-    } else if (url.match(/\/api\/projects\/[^/]+\/chat$/) && method === "post") {
-        const id = url.split("/")[3];
+    } else if (url.match(/\/projects\/[^/]+\/chat$/) && method === "post") {
+        const id = url.split("/")[2];
         const prompt = body.prompt || "";
         const projects = getProjects();
         const foundIndex = projects.findIndex((p) => p._id === id);
@@ -391,8 +404,8 @@ api.defaults.adapter = async (config) => {
             status = 404;
             responseData = { error: "Project not found" };
         }
-    } else if (url.match(/\/api\/projects\/[^/]+\/publish$/) && method === "post") {
-        const id = url.split("/")[3];
+    } else if (url.match(/\/projects\/[^/]+\/publish$/) && method === "post") {
+        const id = url.split("/")[2];
         const projects = getProjects();
         const foundIndex = projects.findIndex((p) => p._id === id);
         if (foundIndex !== -1) {
@@ -403,8 +416,8 @@ api.defaults.adapter = async (config) => {
             status = 404;
             responseData = { error: "Project not found" };
         }
-    } else if (url.match(/\/api\/projects\/[^/]+\/files$/) && method === "put") {
-        const id = url.split("/")[3];
+    } else if (url.match(/\/projects\/[^/]+\/files$/) && method === "put") {
+        const id = url.split("/")[2];
         const files = body.files;
         const projects = getProjects();
         const foundIndex = projects.findIndex((p) => p._id === id);
@@ -417,7 +430,7 @@ api.defaults.adapter = async (config) => {
             status = 404;
             responseData = { error: "Project not found" };
         }
-    } else if (url.match(/\/api\/projects\/[^/]+$/) && method === "get") {
+    } else if (url.match(/\/projects\/[^/]+$/) && method === "get") {
         const id = url.split("/").pop();
         const projects = getProjects();
         const found = projects.find((p) => p._id === id);
@@ -427,7 +440,7 @@ api.defaults.adapter = async (config) => {
             status = 404;
             responseData = { error: "Project not found" };
         }
-    } else if (url.match(/\/api\/projects\/[^/]+$/) && method === "delete") {
+    } else if (url.match(/\/projects\/[^/]+$/) && method === "delete") {
         const id = url.split("/").pop();
         const projects = getProjects();
         const filtered = projects.filter((p) => p._id !== id);
